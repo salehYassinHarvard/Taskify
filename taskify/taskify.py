@@ -3,7 +3,7 @@ Taskify — Reflex app entry point.
 
 Responsibilities:
   - Register all pages (imported for side effects via @rx.page)
-  - Mount FastAPI routers onto Reflex's built-in FastAPI app via
+  - Mount FastAPI routers ahead of Reflex's Starlette backend via
     the `api_transformer` hook
   - Start the APScheduler background job on first request
 """
@@ -14,6 +14,7 @@ import logging
 
 import reflex as rx
 from fastapi import FastAPI
+from starlette.types import ASGIApp
 
 # Register pages (each module uses @rx.page decorator)
 from taskify.pages import login as _login  # noqa: F401
@@ -36,23 +37,26 @@ logging.basicConfig(
 
 
 # ---------------------------------------------------------------------------
-# api_transformer — receives Reflex's FastAPI app and mutates it in place
+# api_transformer — Reflex ≥0.9 passes a Starlette ASGI app (no include_router).
+# We layer FastAPI routes on top, then mount the Reflex backend as fallback.
 # ---------------------------------------------------------------------------
 
-def mount_api(fastapi_app: FastAPI) -> FastAPI:
-    fastapi_app.include_router(canvas_router)
-    fastapi_app.include_router(syllabus_router)
-    fastapi_app.include_router(calendar_router)
-    fastapi_app.include_router(assignments_router)
+def mount_api(reflex_backend: ASGIApp) -> ASGIApp:
+    api = FastAPI()
+    api.include_router(canvas_router)
+    api.include_router(syllabus_router)
+    api.include_router(calendar_router)
+    api.include_router(assignments_router)
 
-    @fastapi_app.middleware("http")
+    @api.middleware("http")
     async def _lazy_startup(request, call_next):
         # APScheduler needs a running event loop; start it on first request.
         # start_scheduler() is idempotent.
         start_scheduler()
         return await call_next(request)
 
-    return fastapi_app
+    api.mount("", reflex_backend)
+    return api
 
 
 # ---------------------------------------------------------------------------
