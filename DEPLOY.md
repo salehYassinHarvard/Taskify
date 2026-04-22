@@ -40,7 +40,7 @@ Authentication → URL Configuration:
 ### 2c. Google Cloud Console
 Authorized redirect URIs must include the Supabase callback:
 ```
-https://dcewsdzdbiwjaiaophnm.supabase.co/auth/v1/callback
+https://xmyaxmiyimyownpysiwk.supabase.co/auth/v1/callback
 ```
 
 ---
@@ -58,7 +58,7 @@ https://dcewsdzdbiwjaiaophnm.supabase.co/auth/v1/callback
 Paste all of these:
 
 ```
-SUPABASE_URL=https://dcewsdzdbiwjaiaophnm.supabase.co
+SUPABASE_URL=https://xmyaxmiyimyownpysiwk.supabase.co
 SUPABASE_ANON_KEY=<from Supabase>
 SUPABASE_SERVICE_KEY=<from Supabase>
 FERNET_KEY=<from the generate command above>
