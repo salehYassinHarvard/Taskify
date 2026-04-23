@@ -1,7 +1,7 @@
 """
-Claude-powered syllabus parser.
+Gemini-powered syllabus parser (free tier via Google AI Studio).
 
-Takes raw PDF text from a syllabus and asks Claude to pull out
+Takes raw PDF text from a syllabus and asks Gemini to pull out
 structured assignment/due-date data as JSON.
 """
 
@@ -11,9 +11,10 @@ import json
 import os
 from typing import Any
 
-from anthropic import Anthropic
+from google import genai
+from google.genai import types
 
-_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5-20250929")
+_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 _MAX_TOKENS = 4000
 
 
@@ -43,8 +44,8 @@ Rules:
 - Times with no timezone -> treat as local/naive (omit timezone in ISO)."""
 
 
-def _extract_client() -> Anthropic:
-    return Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+def _client() -> genai.Client:
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 
 def parse_syllabus(text: str) -> dict[str, Any]:
@@ -52,28 +53,18 @@ def parse_syllabus(text: str) -> dict[str, Any]:
     if not text.strip():
         return {"course_name": "", "course_code": "", "assignments": []}
 
-    client = _extract_client()
-    msg = client.messages.create(
+    client = _client()
+    resp = client.models.generate_content(
         model=_MODEL,
-        max_tokens=_MAX_TOKENS,
-        system=_SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Parse this syllabus and return ONLY JSON:\n\n{text[:40000]}",
-            }
-        ],
+        contents=f"Parse this syllabus and return ONLY JSON:\n\n{text[:40000]}",
+        config=types.GenerateContentConfig(
+            system_instruction=_SYSTEM_PROMPT,
+            max_output_tokens=_MAX_TOKENS,
+            response_mime_type="application/json",
+        ),
     )
 
-    # Claude returns a list of content blocks; grab first text block
-    raw = ""
-    for block in msg.content:
-        if getattr(block, "type", None) == "text":
-            raw = block.text
-            break
-
-    # Strip any accidental markdown fences
-    raw = raw.strip()
+    raw = (resp.text or "").strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         if raw.lower().startswith("json"):
@@ -83,11 +74,10 @@ def parse_syllabus(text: str) -> dict[str, Any]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        # Graceful fallback — don't crash the caller
         return {
             "course_name": "",
             "course_code": "",
             "assignments": [],
-            "_parse_error": "Claude returned non-JSON",
+            "_parse_error": "Gemini returned non-JSON",
             "_raw": raw[:500],
         }

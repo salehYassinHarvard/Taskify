@@ -1,7 +1,7 @@
 """
 POST /api/syllabus/parse
 
-Accepts a PDF upload, extracts text, asks Claude to extract
+Accepts a PDF upload, extracts text, asks Gemini to extract
 structured assignment data, and upserts the assignments to Supabase.
 """
 
@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from api.deps import current_user_id
 from db.supabase import get_supabase_client
 from services import pdf_extractor
-from services.claude_parser import parse_syllabus
+from services.llm_parser import parse_syllabus
 
 router = APIRouter(prefix="/api/syllabus", tags=["syllabus"])
 
@@ -44,7 +44,7 @@ async def parse_syllabus_upload(
     if len(text.strip()) < 40:
         raise HTTPException(400, "No readable text in PDF")
 
-    # Parse with Claude
+    # Parse with Gemini
     parsed = parse_syllabus(text)
     if parsed.get("_parse_error"):
         raise HTTPException(502, parsed["_parse_error"])

@@ -1,6 +1,6 @@
 # Taskify — Railway Deployment Guide
 
-End-to-end instructions for shipping Taskify to Railway with Supabase + Google OAuth + Canvas + Anthropic + Google Calendar integrations.
+End-to-end instructions for shipping Taskify to Railway with Supabase + Google OAuth + Canvas + Gemini + Google Calendar integrations.
 
 ---
 
@@ -12,7 +12,8 @@ End-to-end instructions for shipping Taskify to Railway with Supabase + Google O
 | SUPABASE_ANON_KEY    | Supabase dashboard → Project Settings → API → anon public key                                       |
 | SUPABASE_SERVICE_KEY | Supabase dashboard → Project Settings → API → service_role key (⚠️ server-only)                     |
 | FERNET_KEY           | `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`         |
-| ANTHROPIC_API_KEY    | https://console.anthropic.com/ → API Keys                                                           |
+| GEMINI_API_KEY       | https://aistudio.google.com/app/apikey → Create API key (free tier)                                 |
+| GEMINI_MODEL         | (optional) defaults to `gemini-2.5-flash-lite` — any Gemini model the key has access to             |
 | GOOGLE_CLIENT_ID     | Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client                             |
 | GOOGLE_CLIENT_SECRET | Same as above                                                                                       |
 
@@ -62,7 +63,8 @@ SUPABASE_URL=https://xmyaxmiyimyownpysiwk.supabase.co
 SUPABASE_ANON_KEY=<from Supabase>
 SUPABASE_SERVICE_KEY=<from Supabase>
 FERNET_KEY=<from the generate command above>
-ANTHROPIC_API_KEY=<from Anthropic>
+GEMINI_API_KEY=<from Google AI Studio>
+GEMINI_MODEL=gemini-2.5-flash-lite
 AUTH_REDIRECT_URL=https://<your-railway-domain>.up.railway.app/auth/callback
 API_URL=https://<your-railway-domain>.up.railway.app
 ```
