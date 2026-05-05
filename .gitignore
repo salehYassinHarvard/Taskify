@@ -1,7 +1,11 @@
-.web
-*.db
-.states
-assets/external/
+# Node / Next.js
+node_modules/
+.next/
+out/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts.bak
+
 # Python
 __pycache__/
 *.py[cod]
@@ -11,13 +15,10 @@ build/
 .venv/
 venv/
 
-# Environment
+# Env
 .env
 .env.local
-
-# Reflex
-.web/
-reflex.db
+.env.*.local
 
 # IDE
 .vscode/
@@ -27,3 +28,4 @@ reflex.db
 # OS
 .DS_Store
 Thumbs.db
+.claude/

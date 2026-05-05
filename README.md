@@ -1,227 +1,127 @@
 # Taskify
 
-**The one hub for everything a college student has to do.**
+**The one hub for everything a college student has to do — built for Vercel.**
 
-Taskify pulls assignments out of Canvas, reads due dates out of syllabus PDFs with Gemini, pushes them into Google Calendar, and keeps it all behind Google sign-in with per-user row-level security.
-
----
-
-## Why
-
-The average student juggles Canvas, three different professor websites, a couple of Google Docs syllabi, and a calendar app. Due dates fall through the cracks. Taskify is a single dashboard that *actually* knows what you owe and when.
+Taskify pulls assignments out of Canvas, reads due dates out of syllabus PDFs with Gemini, mirrors them into Google Calendar, and keeps it all behind Google sign-in with per-user row-level security.
 
 ---
 
-## Features
+## Stack
 
-| | |
-| --- | --- |
-| **Google sign-in** | Supabase-managed OAuth. No passwords to remember or leak. |
-| **Canvas sync** | Paste your personal access token once; every course + assignment is pulled in and auto-refreshed every 6 hours. |
-| **Syllabus PDF parser** | Upload a syllabus. Google Gemini (2.5 Flash Lite, free tier) extracts assignments, due dates, and point values as strict JSON. |
-| **Google Calendar push** | Every assignment becomes a calendar event with the right due time. |
-| **Status tracking** | Toggle each task `to do → in progress → done`. Filter the dashboard by status. |
-| **Encrypted tokens** | Canvas and Google tokens are Fernet-encrypted at rest. The database alone is useless without the app's key. |
-| **Row-level security** | Supabase RLS policies enforce `auth.uid() = user_id` on every table. One user literally cannot read another's data — enforced by Postgres, not application code. |
-
----
-
-## Tech stack
-
-- **Frontend + backend**: [Reflex](https://reflex.dev) (pure Python → compiled Next.js)
-- **Database + auth**: [Supabase](https://supabase.com) (Postgres 17 + RLS + Google OAuth)
-- **LLM**: [Google Gemini](https://ai.google.dev) (2.5 Flash Lite, free tier via AI Studio)
-- **External APIs**: Canvas LMS REST, Google Calendar
-- **PDF**: [PyMuPDF](https://pymupdf.readthedocs.io)
-- **Scheduler**: APScheduler (in-process, 6h cadence)
-- **Deploy**: Railway
-
----
-
-## Architecture
-
-```
-┌────────────────────────────────────────────────────────────┐
-│  Browser (Next.js compiled from Reflex components)          │
-│  ┌──────────┐  ┌────────────┐  ┌──────────┐                 │
-│  │  /login  │  │ /dashboard │  │ /settings│                 │
-│  └──────────┘  └────────────┘  └──────────┘                 │
-└───────────────────────┬────────────────────────────────────┘
-                        │ websocket (Reflex) + HTTPS (FastAPI)
-┌───────────────────────┴────────────────────────────────────┐
-│  Reflex backend (one process, one port)                     │
-│                                                              │
-│  ┌────────────────────────┐  ┌────────────────────────────┐ │
-│  │  State                 │  │  FastAPI routers           │ │
-│  │  - AuthState           │  │  (mounted via              │ │
-│  │  - AppState            │  │   api_transformer)         │ │
-│  └────────────────────────┘  │  /api/canvas/*             │ │
-│                               │  /api/syllabus/*           │ │
-│  ┌────────────────────────┐  │  /api/calendar/*           │ │
-│  │  Services              │  │  /api/assignments/*        │ │
-│  │  - CanvasClient (httpx)│  └────────────────────────────┘ │
-│  │  - llm_parser (Gemini) │                                  │
-│  │  - gcal_client         │  ┌────────────────────────────┐ │
-│  │  - pdf_extractor       │  │  APScheduler               │ │
-│  │  - crypto (Fernet)     │  │  every 6h → re-sync Canvas │ │
-│  └────────────────────────┘  └────────────────────────────┘ │
-└───────────────────────┬────────────────────────────────────┘
-                        │
-     ┌──────────────────┼─────────────────┬─────────────────┐
-     ▼                  ▼                 ▼                 ▼
-┌──────────┐      ┌──────────┐      ┌──────────┐      ┌──────────┐
-│ Supabase │      │  Canvas  │      │  Google  │      │  Google  │
-│ Postgres │      │   LMS    │      │ Calendar │      │  Gemini  │
-│  + RLS   │      │          │      │          │      │          │
-└──────────┘      └──────────┘      └──────────┘      └──────────┘
-```
-
-### Database (5 tables, all RLS-protected)
-
-| Table | Purpose |
-| --- | --- |
-| `profiles` | Mirrors `auth.users`, populated on first sign-in. |
-| `courses` | Cached Canvas courses, keyed by `user_id`. |
-| `assignments` | Canvas assignments + syllabus-extracted tasks. Has `status` (`todo` / `in_progress` / `done`). |
-| `calendar_events` | Cached Google Calendar events for conflict display. |
-| `user_tokens` | Fernet-encrypted Canvas / Google refresh tokens. |
-
-Every policy is `auth.uid() = user_id`. Full schema in [`supabase/schema.sql`](supabase/schema.sql).
+- **Frontend** — Next.js 14 (App Router) + React + TypeScript + Tailwind CSS
+- **Auth** — Supabase Auth (Google OAuth, PKCE flow, server-side cookies)
+- **Database** — Supabase Postgres + RLS (`auth.uid() = user_id` on every table)
+- **API** — FastAPI as a single Vercel Python serverless function under `/api/*`
+- **Scheduled jobs** — Vercel Cron (daily Canvas re-sync)
+- **LLM** — Google Gemini 2.5 Flash Lite (free tier) for syllabus parsing
+- **PDF** — PyMuPDF
+- **Hosting** — 100% on Vercel
 
 ---
 
 ## Project layout
 
 ```
-Taskify/
-├── taskify/                 # Reflex app
-│   ├── taskify.py           # entry point, mounts FastAPI via api_transformer
-│   ├── pages/               # login, dashboard, settings
-│   ├── components/          # navbar, assignment_card, calendar, sync_status
-│   └── state/               # AuthState, AppState
-├── api/                     # FastAPI routers
-│   ├── canvas.py            # POST /api/canvas/sync, save-token, disconnect
-│   ├── syllabus.py          # POST /api/syllabus/parse
-│   ├── calendar_routes.py   # GET/POST /api/calendar/*
-│   └── assignments.py       # CRUD + status updates
-├── services/                # integration clients
-│   ├── canvas_client.py
-│   ├── llm_parser.py       # Gemini client
-│   ├── gcal_client.py
-│   ├── pdf_extractor.py
-│   └── crypto.py
-├── db/supabase.py           # Supabase client factory
-├── scheduler.py             # APScheduler 6h Canvas re-sync
-├── supabase/schema.sql      # tables + RLS policies
-├── requirements.txt
-├── rxconfig.py
-├── Procfile                 # Railway entry
-└── DEPLOY.md                # full deployment runbook
+.
+├── app/                        # Next.js App Router
+│   ├── layout.tsx
+│   ├── globals.css             # Tailwind + macOS theme tokens
+│   ├── page.tsx                # / → redirect
+│   ├── login/page.tsx
+│   ├── auth/callback/route.ts  # Supabase PKCE handler
+│   ├── dashboard/page.tsx
+│   └── settings/page.tsx
+├── components/                 # React components (macOS-styled)
+├── lib/
+│   ├── supabase/{client,server}.ts
+│   ├── types.ts
+│   └── utils.ts
+├── api/                        # Vercel Python serverless
+│   ├── index.py                # FastAPI ASGI app — all /api/* routes
+│   ├── canvas.py               # Canvas LMS routes
+│   ├── syllabus.py             # PDF + Gemini parse
+│   ├── calendar_routes.py      # Google Calendar
+│   ├── assignments.py          # Assignment CRUD
+│   └── deps.py                 # FastAPI auth dep (verifies Supabase JWT)
+├── services/                   # Pure-Python integrations (Canvas, Gemini, GCal, crypto)
+├── db/supabase.py              # Supabase Python client
+├── supabase/schema.sql         # Postgres schema + RLS
+├── vercel.json                 # Rewrites + crons + function config
+├── tailwind.config.ts
+├── next.config.mjs
+├── package.json
+└── requirements.txt
 ```
 
 ---
 
-## Local development
-
-### 1. Clone + install
+## Quick start (local dev)
 
 ```bash
-git clone <this repo>
-cd Taskify
+# 1. Install both stacks
+npm install
 pip install -r requirements.txt
+
+# 2. Configure
+cp .env.example .env.local
+# Fill in Supabase + Gemini keys + a generated FERNET_KEY
+
+# 3. Apply Supabase schema
+# Open supabase/schema.sql in the Supabase SQL editor and Run.
+
+# 4. Run frontend + Python API in two terminals
+npm run dev
+# in another terminal:
+PYTHON_API_URL=http://localhost:8000 uvicorn api.index:app --reload --port 8000
 ```
 
-### 2. Environment
-
-```bash
-cp .env.example .env
-```
-
-Fill in:
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` — Supabase dashboard → Project Settings → API
-- `GEMINI_API_KEY` — https://aistudio.google.com/app/apikey (free tier)
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — Google Cloud Console → OAuth 2.0 Client (Web)
-- `FERNET_KEY` — generate once with:
-  ```bash
-  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-  ```
-
-### 3. Apply the Supabase schema
-
-Open [Supabase SQL editor](https://supabase.com/dashboard) → paste [`supabase/schema.sql`](supabase/schema.sql) → Run.
-
-### 4. Configure Supabase Auth
-
-- **Authentication → Providers → Google**: enable, paste your Google Client ID / Secret, scopes `openid email profile https://www.googleapis.com/auth/calendar`
-- **Authentication → URL Configuration**: add `http://localhost:3000/auth/callback` to Redirect URLs
-- On the **Google Cloud Console** side, add `https://<your-project-ref>.supabase.co/auth/v1/callback` to Authorized redirect URIs
-
-### 5. Run
-
-```bash
-reflex init   # first time only
-reflex run
-```
-
-Visit http://localhost:3000.
+The `PYTHON_API_URL` env triggers `next.config.mjs` to rewrite `/api/*` requests to the Python server during dev. In production on Vercel, `/api/*` is served by the serverless function directly — no rewrite needed.
 
 ---
 
-## First-time user flow
+## Deploy to Vercel
 
-1. Click **Continue with Google** on `/login`
-2. Land on `/dashboard` (empty state)
-3. Open **Settings** → paste your Canvas base URL + personal access token (Canvas → Account → Settings → New Access Token)
-4. Click **Save & validate** — should show "Connected as <your name>"
-5. Back on **Dashboard** → **Sync Canvas** pulls every course and assignment
-6. (Optional) Upload a syllabus PDF on the Syllabus tab — Gemini parses it, new assignments appear
-7. Toggle status on each assignment. Every change persists and mirrors to Google Calendar.
+1. Push to GitHub.
+2. Import the repo in Vercel.
+3. Vercel → Settings → Environment Variables — paste every value from [`.env.example`](.env.example).
+4. Vercel auto-detects Next.js + Python from the file structure. First build takes a few minutes.
+5. After the first deploy, in Supabase → Authentication → URL Configuration, add `https://<your-vercel-domain>/auth/callback` to the Redirect URLs list.
 
-After the first sync, APScheduler re-pulls Canvas every 6 hours automatically.
+That's it. Full runbook in [VERCEL.md](VERCEL.md).
 
 ---
 
-## Deployment
+## Database (5 tables, all RLS-protected)
 
-See [`DEPLOY.md`](DEPLOY.md) for the complete Railway runbook, including env vars, redirect URI setup, and a post-launch QA checklist.
+| Table | Purpose |
+| --- | --- |
+| `profiles` | Mirrors `auth.users`, populated on first sign-in by the auth callback. |
+| `courses` | Cached Canvas courses. |
+| `assignments` | Canvas assignments + syllabus-extracted tasks. Has `status` (`todo` / `in_progress` / `done`). |
+| `calendar_events` | Cached Google Calendar events. |
+| `user_tokens` | Fernet-encrypted Canvas / Google refresh tokens. |
 
-TL;DR:
+Every policy is `auth.uid() = user_id`. Schema: [`supabase/schema.sql`](supabase/schema.sql).
 
-```bash
-# Railway auto-detects Python, runs the Procfile:
-web: reflex run --env prod --backend-host 0.0.0.0 --backend-port $PORT
-```
+---
 
-Paste all `.env` values into Railway → Service → Variables, generate a domain, update `AUTH_REDIRECT_URL` + Supabase redirect URLs to the prod domain, redeploy.
+## Scheduled syncs
+
+`vercel.json` registers a daily cron at 03:00 UTC that hits `/api/cron/sync-canvas`. The handler iterates every user with a saved Canvas token and re-pulls their courses + assignments. Cron requests are authenticated via the `CRON_SECRET` env var — Vercel sends it as `Authorization: Bearer <CRON_SECRET>` automatically.
+
+To run more frequently than daily, you need a Vercel Pro plan (free tier is daily-only).
 
 ---
 
 ## Security
 
-- **No passwords stored.** Authentication is delegated entirely to Google via Supabase.
-- **Tokens are encrypted at rest.** Canvas and Google refresh tokens are Fernet-encrypted before they touch the database. The `FERNET_KEY` is held only in process env.
-- **RLS is the last line of defense.** If an API handler ever forgets to filter by user, the database refuses the row. Verified by querying `assignments` with an anon key — returns zero rows.
+- **No passwords stored.** Auth is delegated to Google via Supabase.
+- **Tokens encrypted at rest.** Canvas + Google refresh tokens are Fernet-encrypted before they touch the database.
+- **RLS is the last line of defense.** Even if an API handler forgets to filter by user, Postgres refuses the row.
 - **Service-role key is server-only.** Never shipped to the browser.
-
----
-
-## Roadmap
-
-- [ ] Mobile PWA shell
-- [ ] Push notifications for due-date reminders
-- [ ] Grade tracker (pull from Canvas, project GPA)
-- [ ] Study-group invites via calendar event sharing
-- [ ] Per-course color customization
-- [ ] Offline mode (service worker cache of assignments)
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE) if present, otherwise assume MIT.
-
----
-
-## Author
-
-Built by **Saleh Sultan Yassin** as a CS final project. Questions / PRs welcome.
+MIT.
