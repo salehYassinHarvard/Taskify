@@ -48,7 +48,7 @@ export default function DashboardPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [filter, setFilter] = useState<FilterValue>("all");
-  const [showPast, setShowPast] = useState(false);
+  const [showPast, setShowPast] = useState(true);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -108,9 +108,13 @@ export default function DashboardPage() {
   }, [loadAll]);
 
   async function setStatus(id: number, status: AssignmentStatus) {
+    // Optimistic update — derived stats and active/past split recompute on render.
     setAssignments((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status } : a)),
     );
+    // If the user just marked something done, make sure they can see it land
+    // in Past assignments instead of appearing to vanish.
+    if (status === "done") setShowPast(true);
     const { error } = await supabase
       .from("assignments")
       .update({ status })
