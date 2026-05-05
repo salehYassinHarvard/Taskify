@@ -25,6 +25,13 @@ export function formatDue(iso: string | null | undefined): string {
   return `${date} · ${time}`;
 }
 
+export function isOverdue(iso: string | null | undefined): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.getTime() < Date.now();
+}
+
 export function formatRelative(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);

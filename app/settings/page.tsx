@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarDays,
   CircleCheck,
   FileText,
   GraduationCap,
@@ -38,6 +39,14 @@ export default function SettingsPage() {
     message: string;
   } | null>(null);
 
+  // Google Calendar state
+  const [googleToken, setGoogleToken] = useState<string>("");
+  const [gcalChecking, setGcalChecking] = useState(false);
+  const [gcalStatus, setGcalStatus] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
+
   const loadStatus = useCallback(
     async (token: string) => {
       try {
@@ -66,6 +75,9 @@ export default function SettingsPage() {
         return;
       }
       setAccessToken(session.access_token);
+      const provider = (session as { provider_token?: string | null })
+        .provider_token;
+      if (provider) setGoogleToken(provider);
       setUser({
         email: session.user.email ?? "",
         name:
@@ -77,6 +89,58 @@ export default function SettingsPage() {
       loadStatus(session.access_token);
     })();
   }, [supabase, router, loadStatus]);
+
+  async function testGoogleCalendar() {
+    if (!googleToken) {
+      setGcalStatus({
+        ok: false,
+        message:
+          "No Google token in this session. Sign out and sign back in to grant calendar access.",
+      });
+      return;
+    }
+    setGcalChecking(true);
+    setGcalStatus(null);
+    try {
+      const r = await fetch("/api/calendar/events", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "X-Google-Token": googleToken,
+        },
+      });
+      const data = await r.json();
+      if (r.ok) {
+        setGcalStatus({
+          ok: true,
+          message: `Connected. Pulled ${data.count ?? 0} upcoming events.`,
+        });
+      } else {
+        setGcalStatus({
+          ok: false,
+          message: data.detail ?? "Calendar fetch failed.",
+        });
+      }
+    } catch (e: unknown) {
+      setGcalStatus({
+        ok: false,
+        message: e instanceof Error ? e.message : "Calendar fetch failed.",
+      });
+    } finally {
+      setGcalChecking(false);
+    }
+  }
+
+  async function reconnectGoogle() {
+    await supabase.auth.signOut();
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
+        scopes:
+          "openid email profile https://www.googleapis.com/auth/calendar",
+      },
+    });
+  }
 
   async function saveCanvas() {
     if (!canvasUrl || !canvasToken) {
@@ -234,6 +298,62 @@ export default function SettingsPage() {
             {coursesCount > 0 && (
               <div className="text-[11px] text-zinc-400">
                 {coursesCount} courses synced.
+              </div>
+            )}
+          </Section>
+
+          {/* Google Calendar */}
+          <Section
+            icon={<CalendarDays className="w-[18px] h-[18px] text-blue-400" />}
+            title="Google Calendar"
+            badge={
+              <span
+                className={cn(
+                  "px-2.5 py-0.5 text-[11px] font-medium rounded-full ring-1",
+                  googleToken
+                    ? "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30"
+                    : "bg-zinc-500/20 text-zinc-400 ring-zinc-400/20",
+                )}
+              >
+                {googleToken ? "Connected" : "Not connected"}
+              </span>
+            }
+          >
+            <p className="text-sm text-zinc-400">
+              {googleToken
+                ? "Your Google Calendar is linked through your Google sign-in. Upcoming events show on the dashboard."
+                : "Calendar access wasn't granted on sign-in. Reconnect to allow Taskify to read your calendar."}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={testGoogleCalendar}
+                disabled={gcalChecking || !googleToken}
+                className="mac-button"
+              >
+                {gcalChecking ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : null}
+                Test connection
+              </button>
+              <button onClick={reconnectGoogle} className="mac-button-soft">
+                {googleToken ? "Reconnect" : "Connect"}
+              </button>
+            </div>
+            {gcalStatus && (
+              <div
+                className={cn(
+                  "flex items-start gap-2 text-sm rounded-lg p-3",
+                  gcalStatus.ok
+                    ? "bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-400/20"
+                    : "bg-red-500/10 text-red-300 ring-1 ring-red-400/20",
+                )}
+              >
+                {gcalStatus.ok ? (
+                  <CircleCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <TriangleAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                )}
+                <span>{gcalStatus.message}</span>
               </div>
             )}
           </Section>

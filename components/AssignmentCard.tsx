@@ -4,7 +4,7 @@ import { Book, Calendar, Check, Star } from "lucide-react";
 import { useState } from "react";
 
 import { Assignment, AssignmentStatus } from "@/lib/types";
-import { cn, formatDue } from "@/lib/utils";
+import { cn, formatDue, isOverdue } from "@/lib/utils";
 
 const NEXT_STATUS: Record<AssignmentStatus, AssignmentStatus> = {
   todo: "in_progress",
@@ -32,23 +32,38 @@ export function AssignmentCard({ assignment, onStatusChange }: Props) {
     }
   };
 
-  const statusBadge = {
-    done: {
-      label: "Done",
-      classes: "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30",
-    },
-    in_progress: {
-      label: "In progress",
-      classes: "bg-amber-500/20 text-amber-300 ring-amber-400/30",
-    },
-    todo: {
-      label: "To do",
-      classes: "bg-zinc-500/20 text-zinc-300 ring-zinc-400/20",
-    },
-  }[assignment.status ?? "todo"];
+  const overdue =
+    assignment.status !== "done" && isOverdue(assignment.due_at);
+
+  const statusBadge = overdue
+    ? {
+        label: "Past due",
+        classes: "bg-red-500/20 text-red-300 ring-red-400/30",
+      }
+    : {
+        done: {
+          label: "Done",
+          classes: "bg-emerald-500/20 text-emerald-300 ring-emerald-400/30",
+        },
+        in_progress: {
+          label: "In progress",
+          classes: "bg-amber-500/20 text-amber-300 ring-amber-400/30",
+        },
+        todo: {
+          label: "To do",
+          classes: "bg-zinc-500/20 text-zinc-300 ring-zinc-400/20",
+        },
+      }[assignment.status ?? "todo"];
+
+  const isPast = overdue || assignment.status === "done";
 
   return (
-    <div className="mac-card mac-anim p-3 w-full">
+    <div
+      className={cn(
+        "mac-card mac-anim p-3 w-full",
+        isPast && "opacity-70 hover:opacity-100 transition-opacity",
+      )}
+    >
       <div className="flex items-center gap-3">
         <button
           onClick={handleClick}
@@ -64,6 +79,7 @@ export function AssignmentCard({ assignment, onStatusChange }: Props) {
             className={cn(
               "font-medium text-[15px] tracking-tight truncate",
               assignment.status === "done" && "line-through text-zinc-500",
+              overdue && "text-red-300/90",
             )}
           >
             {assignment.title}

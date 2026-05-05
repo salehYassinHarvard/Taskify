@@ -1,6 +1,16 @@
 "use client";
 
-import { Check, CircleDashed, Inbox, List, Loader2, Plus } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleDashed,
+  Clock,
+  Inbox,
+  List,
+  Loader2,
+  Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,14 +26,20 @@ import type {
   AssignmentStatus,
   CalendarEvent,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, isOverdue } from "@/lib/utils";
 
-const FILTERS: { label: string; value: AssignmentStatus | "all" }[] = [
+type FilterValue = AssignmentStatus | "all" | "past";
+
+const FILTERS: { label: string; value: FilterValue }[] = [
   { label: "All", value: "all" },
   { label: "To do", value: "todo" },
   { label: "In progress", value: "in_progress" },
-  { label: "Done", value: "done" },
+  { label: "Past", value: "past" },
 ];
+
+function isPastAssignment(a: Assignment): boolean {
+  return a.status === "done" || isOverdue(a.due_at);
+}
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -31,7 +47,8 @@ export default function DashboardPage() {
   const [accessToken, setAccessToken] = useState<string>("");
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [filter, setFilter] = useState<AssignmentStatus | "all">("all");
+  const [filter, setFilter] = useState<FilterValue>("all");
+  const [showPast, setShowPast] = useState(false);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -46,6 +63,8 @@ export default function DashboardPage() {
       return;
     }
     setAccessToken(session.access_token);
+    const provider = (session as { provider_token?: string | null })
+      .provider_token;
 
     setLoading(true);
     const [a, e] = await Promise.all([
@@ -61,6 +80,27 @@ export default function DashboardPage() {
     if (a.data) setAssignments(a.data as Assignment[]);
     if (e.data) setEvents(e.data as CalendarEvent[]);
     setLoading(false);
+
+    // Refresh Google Calendar in the background if we have a provider token.
+    if (provider) {
+      try {
+        const r = await fetch("/api/calendar/events", {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "X-Google-Token": provider,
+          },
+        });
+        if (r.ok) {
+          const fresh = await supabase
+            .from("calendar_events")
+            .select("*")
+            .order("start_at", { ascending: true });
+          if (fresh.data) setEvents(fresh.data as CalendarEvent[]);
+        }
+      } catch {
+        // Silent — cached events still display.
+      }
+    }
   }, [supabase, router]);
 
   useEffect(() => {
@@ -107,10 +147,24 @@ export default function DashboardPage() {
     }
   }
 
-  const filtered =
-    filter === "all" ? assignments : assignments.filter((a) => a.status === filter);
-  const todoCount = assignments.filter((a) => a.status === "todo").length;
-  const doneCount = assignments.filter((a) => a.status === "done").length;
+  // Active = not done AND not overdue. Past = done OR overdue.
+  const activeAll = assignments.filter((a) => !isPastAssignment(a));
+  const pastAll = assignments.filter((a) => isPastAssignment(a));
+
+  let activeList: Assignment[] = [];
+  let pastList: Assignment[] = [];
+  if (filter === "all") {
+    activeList = activeAll;
+    pastList = pastAll;
+  } else if (filter === "past") {
+    pastList = pastAll;
+  } else {
+    activeList = activeAll.filter((a) => a.status === filter);
+  }
+
+  const todoCount = activeAll.filter((a) => a.status === "todo").length;
+  const overdueCount = pastAll.filter((a) => a.status !== "done").length;
+  const doneCount = pastAll.filter((a) => a.status === "done").length;
 
   return (
     <div className="min-h-screen">
@@ -135,6 +189,12 @@ export default function DashboardPage() {
               value={todoCount}
               accent="rgb(96,165,250)"
               icon={CircleDashed}
+            />
+            <StatCard
+              label="Past due"
+              value={overdueCount}
+              accent="rgb(248,113,113)"
+              icon={Clock}
             />
             <StatCard
               label="Done"
@@ -186,17 +246,55 @@ export default function DashboardPage() {
                 <div className="flex justify-center py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-zinc-500" />
                 </div>
-              ) : filtered.length === 0 ? (
+              ) : activeList.length === 0 && pastList.length === 0 ? (
                 <EmptyState />
               ) : (
-                <div className="space-y-2">
-                  {filtered.map((a) => (
-                    <AssignmentCard
-                      key={a.id}
-                      assignment={a}
-                      onStatusChange={setStatus}
-                    />
-                  ))}
+                <div className="space-y-4">
+                  {activeList.length > 0 && (
+                    <div className="space-y-2">
+                      {activeList.map((a) => (
+                        <AssignmentCard
+                          key={a.id}
+                          assignment={a}
+                          onStatusChange={setStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {pastList.length > 0 && (
+                    <div className="space-y-2">
+                      <button
+                        onClick={() =>
+                          setShowPast((s) => filter === "past" ? true : !s)
+                        }
+                        disabled={filter === "past"}
+                        className="flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.12em] text-zinc-400 hover:text-zinc-200 transition"
+                      >
+                        {filter === "past" || showPast ? (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        )}
+                        Past assignments
+                        <span className="text-zinc-500 normal-case tracking-normal font-normal">
+                          ({pastList.length})
+                        </span>
+                      </button>
+
+                      {(filter === "past" || showPast) && (
+                        <div className="space-y-2">
+                          {pastList.map((a) => (
+                            <AssignmentCard
+                              key={a.id}
+                              assignment={a}
+                              onStatusChange={setStatus}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
