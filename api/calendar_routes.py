@@ -1,12 +1,14 @@
 """
 Google Calendar routes.
 
-The Google access_token lives on the Supabase session as `provider_token`.
-The frontend (Reflex state) passes it along via the X-Google-Token header.
+The Google access_token lives on the Supabase session as `provider_token`
+(set by Supabase when the user signs in with Google + the calendar scope).
+The Next.js frontend reads the session client-side and forwards the token
+to these routes via the X-Google-Token header.
 
 Endpoints:
-  GET  /api/calendar/events
-  POST /api/calendar/sync-assignments  — create gcal events for assignments
+  GET  /api/calendar/events           — list upcoming events + cache to Supabase
+  POST /api/calendar/sync-assignments — create gcal events for due assignments
 """
 
 from __future__ import annotations

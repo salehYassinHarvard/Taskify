@@ -53,7 +53,8 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Vercel Cron — replaces APScheduler.
+# Vercel Cron handler — invoked daily on the schedule defined in vercel.json.
+# Replaces what used to be an APScheduler in-process worker.
 # ---------------------------------------------------------------------------
 
 @app.get("/api/cron/sync-canvas")
